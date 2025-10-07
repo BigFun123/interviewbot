@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 const SESSION_DURATION_MS = 5 * 60 * 1000; // 5 minutes
 
-import logo from "/assets/openai-logomark.svg";
+import logo from "/assets/logo.svg";
 import EventLog from "./EventLog";
 import SessionControls from "./SessionControls";
 import ToolPanel from "./ToolPanel";
@@ -83,6 +83,7 @@ export default function App() {
 
     const baseUrl = "https://api.openai.com/v1/realtime";
     const model = "gpt-4o-realtime-preview-2024-12-17";
+    //const model = "gpt-realtime-mini-2025-10-06";
     const sdpResponse = await fetch(`${baseUrl}?model=${model}`, {
       method: "POST",
       body: offer.sdp,
@@ -224,10 +225,7 @@ export default function App() {
       <nav className="fixed top-0 left-0 right-0 h-16 flex items-center bg-white z-50 shadow-sm">
         <div className="flex items-center gap-2 w-full mx-2 px-2 pb-2 border-0 border-b border-solid border-gray-200">
           <img style={{ width: "24px" }} src={logo} alt="Logo" />
-          <h1 className="text-sm sm:text-base font-semibold">Virtual Interview Assistant DEMO</h1>
-          <span className="hidden lg:inline text-xs ml-2">I will ask you questions, but if you don't know the answer, I will explain!</span>
-          <span className="hidden lg:inline text-xs ml-2">Say "Next Question" to move on.</span>
-          <span className="hidden lg:inline text-xs ml-2">(DEMO Only. Session expires in 5 minutes)</span>
+          <h1 className="text-sm sm:text-base font-semibold">AI Interviewer DEMO by Karl Lilje</h1>          
         </div>
       </nav>
 
@@ -264,10 +262,12 @@ export default function App() {
                 <option value="system-design">System Design</option>
                 <option value="cto-role">CTO Role</option>
                 <option value="qa-role">QA Role</option>
-                <option value="asset-management">Asset Management</option>
+                <option value="asset-management">Asset Management</option>                
                 <option value="finance">Finance</option>
+                <option value="mechatronics">Mechatronics</option>
                 <option value="brics-trade-group">BRICS Trade Group</option>
                 <option value="g7-trade-group">G7 Trade Group</option>
+                <option value="human-resources">Human Resources</option>
               </select>
             </div>
 
@@ -294,6 +294,8 @@ export default function App() {
                 <option value="team-lead">Team Lead</option>
                 <option value="tech-lead">Tech Lead</option>
                 <option value="cto">CTO</option>
+                <option value="ceo">CEO</option>
+                <option value="director">Director</option>
               </select>
             </div>
           </div>

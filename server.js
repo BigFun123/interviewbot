@@ -36,6 +36,8 @@ app.get("/token", async (req, res) => {
         },
         body: JSON.stringify({
           model: "gpt-4o-realtime-preview-2024-12-17",
+          //model: "gpt-realtime-mini-2025-10-06",
+          //model: "gpt-4o-mini-audio-preview",
           voice: "verse",
         }),
       },
@@ -56,8 +58,24 @@ app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'dist', 'client', '
 app.get("*", async (req, res, next) => {
   const url = req.originalUrl;
   try {
-    const template = fs.readFileSync(path.join(clientDist, "index.html"), "utf-8");
-    const { render } = await import(path.resolve(__dirname, "../dist/server/entry-server.js"));
+    let template, render;
+    if (process.env.NODE_ENV === "development") {
+      // In development, use Vite's dev server and /client source
+      const vite = await createViteServer({
+        server: { middlewareMode: true },
+        appType: "custom",
+      });
+      app.use(vite.middlewares);
+
+      const clientPath = path.resolve(__dirname, "../client/index.html");
+      template = fs.readFileSync(clientPath, "utf-8");
+      template = await vite.transformIndexHtml(url, template);
+      render = (await vite.ssrLoadModule("/src/entry-server.jsx")).render;
+    } else {
+      // In production, use built files from /dist
+      template = fs.readFileSync(path.join(clientDist, "index.html"), "utf-8");
+      render = (await import(path.resolve(__dirname, "../dist/server/entry-server.js"))).render;
+    }
     const appHtml = await render(url);
     const html = template.replace(`<!--ssr-outlet-->`, appHtml?.html);
     res.status(200).set({ "Content-Type": "text/html" }).end(html);

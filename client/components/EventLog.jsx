@@ -52,8 +52,25 @@ export default function EventLog({ events }) {
       }
     }
 
+    // If event has a transcript, show it instead of JSON
+    console.log(event);
+    const content = event?.transcript ? (
+      <div className="text-gray-800 bg-gray-50 p-3 rounded-md overflow-x-auto">
+        <pre className="text-sm whitespace-pre-wrap break-words">{event.transcript}</pre>
+      </div>
+    ) : (
+      <div
+        className={`text-gray-600 bg-gray-50 p-3 rounded-md overflow-x-auto hidden`}
+      >
+        <pre className="text-xs whitespace-pre-wrap break-words">{JSON.stringify(event, null, 2)}</pre>
+      </div>
+    );
+
     eventsToDisplay.push(
-      <Event key={event.event_id} event={event} timestamp={event.timestamp} />,
+      <div key={event.event_id}>
+        <Event event={event} timestamp={event.timestamp} />
+        {event.transcript && content}
+      </div>
     );
   });
 
@@ -63,6 +80,9 @@ export default function EventLog({ events }) {
         <div className="text-center text-gray-500 py-8 sm:py-12">
           <div className="text-lg sm:text-xl mb-2">Ready to start your interview</div>
           <div className="text-sm">Select a topic and difficulty level above, then click start to begin</div>
+          <div className="text-sm">I will ask you questions, but if you don't know the answer, I will explain!</div>
+          <div className="text-sm">Say "Next Question" to move on.</div>
+          <div className="text-sm">DEMO Only. Session expires in 5 minutes.</div>
         </div>
       ) : (
         eventsToDisplay
