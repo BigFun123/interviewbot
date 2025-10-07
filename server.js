@@ -2,17 +2,26 @@ import express from "express";
 import fs from "fs";
 import { createServer as createViteServer } from "vite";
 import "dotenv/config";
+import { fileURLToPath } from "url";
+import path from "path";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const clientDist = path.resolve(__dirname, "./dist/client");
+console.log("Client Dist Path:", clientDist);
+
+
 
 const app = express();
 const port = process.env.PORT || 3000;
 const apiKey = process.env.OPENAI_API_KEY;
 
 // Configure Vite middleware for React client
-const vite = await createViteServer({
-  server: { middlewareMode: true },
-  appType: "custom",
-});
-app.use(vite.middlewares);
+// const vite = await createViteServer({
+//   server: { middlewareMode: true },
+//   appType: "custom",
+// });
+// app.use(vite.middlewares);
 
 // API route for token generation
 app.get("/token", async (req, res) => {
@@ -40,24 +49,23 @@ app.get("/token", async (req, res) => {
   }
 });
 
-// Render the React client
-app.use("*", async (req, res, next) => {
-  const url = req.originalUrl;
+app.use(express.static(clientDist));
+app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'dist', 'client', 'index.html')));
 
+// SSR handler
+app.get("*", async (req, res, next) => {
+  const url = req.originalUrl;
   try {
-    const template = await vite.transformIndexHtml(
-      url,
-      fs.readFileSync("./client/index.html", "utf-8"),
-    );
-    const { render } = await vite.ssrLoadModule("./client/entry-server.jsx");
+    const template = fs.readFileSync(path.join(clientDist, "index.html"), "utf-8");
+    const { render } = await import(path.resolve(__dirname, "../dist/server/entry-server.js"));
     const appHtml = await render(url);
     const html = template.replace(`<!--ssr-outlet-->`, appHtml?.html);
     res.status(200).set({ "Content-Type": "text/html" }).end(html);
   } catch (e) {
-    vite.ssrFixStacktrace(e);
     next(e);
   }
 });
+
 
 app.listen(port, () => {
   console.log(`Express server running on *:${port}`);

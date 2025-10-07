@@ -21,4 +21,19 @@ body {
   font-family: "Consolas", "Andale Mono", monospace;
   font-size: 0.9rem;
   background-color: var(--color-base);
+  /* Improve text rendering on mobile */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  /* Prevent zoom on double tap on iOS */
+  touch-action: manipulation;
+}
+
+/* Ensure mobile-friendly touch targets */
+* {
+  box-sizing: border-box;
+}
+
+/* Better scrolling on mobile */
+.scrollable {
+  -webkit-overflow-scrolling: touch;
 }

@@ -7,27 +7,32 @@ function Event({ event, timestamp }) {
   const isClient = event.event_id && !event.event_id.startsWith("event_");
 
   return (
-    <div className="flex flex-col gap-2 p-2 rounded-md bg-gray-50">
+    <div className="flex flex-col gap-2 p-3 sm:p-4 rounded-lg bg-white shadow-sm border border-gray-200">
       <div
-        className="flex items-center gap-2 cursor-pointer"
+        className="flex items-center gap-2 cursor-pointer touch-manipulation min-h-[44px] py-2"
         onClick={() => setIsExpanded(!isExpanded)}
       >
         {isClient ? (
-          <ArrowDown className="text-blue-400" />
+          <ArrowDown className="text-blue-500 flex-shrink-0" size={18} />
         ) : (
-          <ArrowUp className="text-green-400" />
+          <ArrowUp className="text-green-500 flex-shrink-0" size={18} />
         )}
-        <div className="text-sm text-gray-500">
-          {isClient ? "client:" : "server:"}
-          &nbsp;{event.type} | {timestamp}
+        <div className="text-sm text-gray-600 flex-1 min-w-0">
+          <span className="font-medium">
+            {isClient ? "You:" : "AI:"}
+          </span>
+          <span className="ml-2">{event.type}</span>
+          <span className="block sm:inline sm:ml-2 text-xs text-gray-400">
+            {timestamp}
+          </span>
         </div>
       </div>
       <div
-        className={`text-gray-500 bg-gray-200 p-2 rounded-md overflow-x-auto ${
+        className={`text-gray-600 bg-gray-50 p-3 rounded-md overflow-x-auto ${
           isExpanded ? "block" : "hidden"
         }`}
       >
-        <pre className="text-xs">{JSON.stringify(event, null, 2)}</pre>
+        <pre className="text-xs whitespace-pre-wrap break-words">{JSON.stringify(event, null, 2)}</pre>
       </div>
     </div>
   );
@@ -53,9 +58,12 @@ export default function EventLog({ events }) {
   });
 
   return (
-    <div className="flex flex-col gap-2 overflow-x-auto">
+    <div className="flex flex-col gap-3 sm:gap-4">
       {events.length === 0 ? (
-        <div className="text-gray-500">Awaiting events...</div>
+        <div className="text-center text-gray-500 py-8 sm:py-12">
+          <div className="text-lg sm:text-xl mb-2">Ready to start your interview</div>
+          <div className="text-sm">Select a topic and difficulty level above, then click start to begin</div>
+        </div>
       ) : (
         eventsToDisplay
       )}

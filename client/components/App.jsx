@@ -1,4 +1,7 @@
 import { useEffect, useRef, useState } from "react";
+
+const SESSION_DURATION_MS = 5 * 60 * 1000; // 5 minutes
+
 import logo from "/assets/openai-logomark.svg";
 import EventLog from "./EventLog";
 import SessionControls from "./SessionControls";
@@ -11,7 +14,44 @@ export default function App() {
   const [dataChannel, setDataChannel] = useState(null);
   const peerConnection = useRef(null);
   const audioElement = useRef(null);
-  const [topic, setTopic] = useState("Technical Interview");
+  const [topic, setTopic] = useState(".NET Core");
+  const [role, setRole] = useState("Senior");
+
+
+  // Add a timer state
+  const [timer, setTimer] = useState(SESSION_DURATION_MS);
+  const timerRef = useRef(null);
+
+  // Countdown effect
+  useEffect(() => {
+    if (isSessionActive) {
+      setTimer(SESSION_DURATION_MS);
+      timerRef.current = setInterval(() => {
+        setTimer((prev) => {
+          if (prev <= 1000) {
+            clearInterval(timerRef.current);
+            stopSession();
+            return 0;
+          }
+          return prev - 1000;
+        });
+      }, 1000);
+    } else {
+      clearInterval(timerRef.current);
+      setTimer(SESSION_DURATION_MS);
+    }
+    return () => clearInterval(timerRef.current);
+  }, [isSessionActive]);
+
+  // Helper to format mm:ss
+  function formatTime(ms) {
+    const totalSeconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(totalSeconds / 60)
+      .toString()
+      .padStart(2, "0");
+    const seconds = (totalSeconds % 60).toString().padStart(2, "0");
+    return `${minutes}:${seconds}`;
+  }
 
   async function startSession() {
     // Get a session token for OpenAI Realtime API
@@ -137,8 +177,8 @@ export default function App() {
       dataChannel.addEventListener("message", (e) => {
         const event = JSON.parse(e.data);
         if (!event.timestamp) {
-        //  event.timestamp = new Date().toLocaleTimeString();
-        
+          //  event.timestamp = new Date().toLocaleTimeString();
+
         }
 
         const timestamp = new Date().toLocaleTimeString();
@@ -146,7 +186,7 @@ export default function App() {
         messageCopy.timestamp = timestamp;
         setEvents((prev) => [messageCopy, ...prev]);
 
-//        setEvents((prev) => [event, ...prev]);
+        //        setEvents((prev) => [event, ...prev]);
       });
 
       // Set session active when the data channel is opened
@@ -155,81 +195,115 @@ export default function App() {
         setEvents([]);
 
         // Send initial topic instruction to model
-      if (topic) {
-        const event = {
-          type: "conversation.item.create",
-          item: {
-            type: "message",
-            role: "user",
-            content: [
-              {
-                type: "input_text",
-                text: `You are an interviewer on the subject of ${topic}. Please start the conversation and ask me questions to test my knowledge.`,
-              },
-            ],
-          },
-        };
+        if (topic) {
+          const event = {
+            type: "conversation.item.create",
+            item: {
+              type: "message",
+              role: "user",
+              content: [
+                {
+                  type: "input_text",
+                  text: `You are an interviewer on the subject of ${topic}, the role is: ${role}. Please start the conversation and ask me questions to test my knowledge.`,
+                },
+              ],
+            },
+          };
 
-        dataChannel.send(JSON.stringify(event));
-        dataChannel.send(JSON.stringify({ type: "response.create" }));
-      }
+          console.log(event);
+
+          dataChannel.send(JSON.stringify(event));
+          dataChannel.send(JSON.stringify({ type: "response.create" }));
+        }
       });
     }
   }, [dataChannel, topic]);
 
   return (
     <>
-    
-      <nav className="absolute top-0 left-0 right-0 h-16 flex items-center">
-        <div className="flex items-center gap-4 w-full m-4 pb-2 border-0 border-b border-solid border-gray-200">
-          <img style={{ width: "24px" }} src={logo} />
-          <h1>Virtual Interview Assistant</h1>
-          <h1>I will ask you questions, but if you don't know the answer, I will explain!</h1>
+      <nav className="fixed top-0 left-0 right-0 h-16 flex items-center bg-white z-50 shadow-sm">
+        <div className="flex items-center gap-2 w-full mx-2 px-2 pb-2 border-0 border-b border-solid border-gray-200">
+          <img style={{ width: "24px" }} src={logo} alt="Logo" />
+          <h1 className="text-sm sm:text-base font-semibold">Virtual Interview Assistant DEMO</h1>
+          <span className="hidden lg:inline text-xs ml-2">I will ask you questions, but if you don't know the answer, I will explain!</span>
+          <span className="hidden lg:inline text-xs ml-2">Say "Next Question" to move on.</span>
+          <span className="hidden lg:inline text-xs ml-2">(DEMO Only. Session expires in 5 minutes)</span>
         </div>
       </nav>
-      
-      <main className="absolute top-16 left-0 right-0 bottom-0">
-        <div className="absolute top-4 right-8 z-50">
-      <label htmlFor="topic-select" className="mr-2 font-semibold">
-        Technical Interview AI
-      </label>
-      <select
-        id="topic-select"
-        className="border rounded px-2 py-1"
-        defaultValue=""
-        onChange={(e) => {
-          if (e.target.value) {
-            setTopic(e.target.value);
-            // You can handle topic selection here if needed
-            console.log("Selected topic:", e.target.value);
-          }
-        }}
-      >
-        <option value="" disabled>
-          Select a topic
-        </option>
-        <option value="dotnet">.NET</option>
-        <option value="react">React</option>
-        <option value="sql">SQL</option>
-        <option value="nodejs-and-express">NodeJS and Express</option>
-        <option value="javascript">JavaScript</option>
-        <option value="python">Python</option>
-        <option value="devops">DevOps</option>
-        <option value="system-design">System Design</option>
-        <option value="cto-role">CTO Role</option>
-        <option value="qa-role">QA Role</option>
-        <option value="asset-management">Asset Management</option>
-        <option value="finance">Finance</option>
-        
-      </select>
-      {topic}
-    </div>
-        <section className="absolute top-0 left-0 right-[580px] bottom-0 flex">
-          
-          <section className="absolute top-0 left-0 right-0 bottom-32 px-4 overflow-y-auto">
+
+      <main className="fixed top-16 left-0 right-0 bottom-0 bg-gray-50 flex flex-col">
+        {/* Mobile-first responsive controls */}
+        <div className="flex-shrink-0 bg-white border-b border-gray-200 p-3 sm:p-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:gap-6">
+            <div className="flex-1 min-w-0">
+              <label htmlFor="topic-select" className="block text-xs font-semibold text-gray-700 mb-1">
+                Interview Topic
+              </label>
+              <select
+                id="topic-select"
+                className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                value={topic}
+                onChange={(e) => {
+                  if (e.target.value) {
+                    setTopic(e.target.value);
+                    console.log("Selected topic:", e.target.value);
+                  }
+                }}
+              >
+                <option value="" disabled>
+                  Select a topic
+                </option>
+                <option value="dotnet-sore">.NET Core</option>
+                <option value="dotnet">.NET</option>
+                <option value="react">React</option>
+                <option value="sql">SQL</option>
+                <option value="nodejs-and-express">NodeJS and Express</option>
+                <option value="javascript">JavaScript</option>
+                <option value="python">Python</option>
+                <option value="devops">DevOps</option>
+                <option value="system-design">System Design</option>
+                <option value="cto-role">CTO Role</option>
+                <option value="qa-role">QA Role</option>
+                <option value="asset-management">Asset Management</option>
+                <option value="finance">Finance</option>
+                <option value="brics-trade-group">BRICS Trade Group</option>
+                <option value="g7-trade-group">G7 Trade Group</option>
+              </select>
+            </div>
+
+            <div className="flex-1 min-w-0">
+              <label htmlFor="role-select" className="block text-xs font-semibold text-gray-700 mb-1">
+                Experience Level
+              </label>
+              <select
+                id="role-select"
+                className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                value={role}
+                onChange={(e) => {
+                  setRole(e.target.value);
+                  console.log("Selected role:", e.target.value);
+                }}
+              >
+                <option value="" disabled>
+                  Select a role
+                </option>
+                <option value="senior">Senior</option>
+                <option value="junior">Junior</option>
+                <option value="manager">Manager</option>
+                <option value="project-manager">Project Manager</option>
+                <option value="team-lead">Team Lead</option>
+                <option value="tech-lead">Tech Lead</option>
+                <option value="cto">CTO</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <section className="flex-1 flex flex-col min-h-0">
+          <div className="flex-1 overflow-y-auto px-3 py-3 sm:px-4 sm:py-4 scrollable">
             <EventLog events={events} />
-          </section>
-          <section className="absolute h-32 left-0 right-0 bottom-0 p-4">
+          </div>
+          <div className="flex-shrink-0 border-t border-gray-200 p-3 sm:p-4 bg-white">
             <SessionControls
               startSession={startSession}
               stopSession={stopSession}
@@ -238,10 +312,12 @@ export default function App() {
               events={events}
               isSessionActive={isSessionActive}
               topic={topic}
+              role={role}
             />
-          </section>
+          </div>
         </section>
-        {/* <section className="absolute top-0 w-[580px] right-0 bottom-0 p-24 pt-0 overflow-y-auto">
+        {/* Uncomment and adjust below for side panels on desktop */}
+        {/* <section className="hidden sm:block sm:relative sm:w-[380px] sm:min-w-[280px] sm:max-w-[580px] sm:overflow-y-auto sm:bg-white sm:border-l sm:border-gray-200">
           <ToolPanel
             sendClientEvent={sendClientEvent}
             sendTextMessage={sendTextMessage}

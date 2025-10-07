@@ -1,0 +1,8 @@
+{
+    "appService.zipIgnorePattern": [
+        "node_modules{,/**}",
+        ".vscode{,/**}"
+    ],
+    "appService.defaultWebAppToDeploy": "/subscriptions/e926187a-ed79-41b2-9f70-65b332902a2c/resourceGroups/appsvc_linux_centralus_basic/providers/Microsoft.Web/sites/VirtualAce",
+    "appService.deploySubpath": "."
+}
