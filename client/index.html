@@ -1,18 +1,22 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
   <head>
-    <meta charset="utf-8" />
-    <title>OpenAI Realtime Console</title>
-    <meta name="description" content="OpenAI Realtime Console" />
-    <meta name="author" content="OpenAI" />
-    <link rel="icon" href="/assets/logo.svg" />
+    <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link rel="stylesheet" href="/base.css" />
-    <!-- head -->
+    <title>OpenAI Realtime Console</title>
   </head>
   <body>
     <div id="root"><!--ssr-outlet--></div>
-    <!-- hydration -->
     <script type="module" src="./entry-client.jsx"></script>
+    <script>
+      // Unregister any existing service workers
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then(function(registrations) {
+          for(let registration of registrations) {
+            registration.unregister();
+          }
+        });
+      }
+    </script>
   </body>
 </html>

@@ -7,6 +7,9 @@ import EventLog from "./EventLog";
 import SessionControls from "./SessionControls";
 import ToolPanel from "./ToolPanel";
 import EgyptPanel from "./EgyptPanel";
+import JobSpecification from "./JobSpecification";
+import APIKeyInput from "./APIKeyInput";
+import APIErrorAlert from "./APIErrorAlert";
 
 export default function App() {
   const [isSessionActive, setIsSessionActive] = useState(false);
@@ -16,7 +19,9 @@ export default function App() {
   const audioElement = useRef(null);
   const [topic, setTopic] = useState(".NET Core");
   const [role, setRole] = useState("Senior");
-
+  const [jobSpec, setJobSpec] = useState("");
+  const [apiKey, setApiKey] = useState("");
+  const [apiKeyError, setApiKeyError] = useState(null);
 
   // Add a timer state
   const [timer, setTimer] = useState(SESSION_DURATION_MS);
@@ -54,52 +59,74 @@ export default function App() {
   }
 
   async function startSession() {
-    // Get a session token for OpenAI Realtime API
-    const tokenResponse = await fetch("/token");
-    const data = await tokenResponse.json();
-    const EPHEMERAL_KEY = data.client_secret.value;
+    try {
+      // Clear any previous API key errors
+      setApiKeyError(null);
+      
+      // Get a session token for OpenAI Realtime API
+      const tokenUrl = apiKey ? `/token?key=${encodeURIComponent(apiKey)}` : "/token";
+      const tokenResponse = await fetch(tokenUrl);
+      const data = await tokenResponse.json();
+      
+      // Check for API key errors
+      if (!tokenResponse.ok) {
+        setApiKeyError({
+          type: data.errorType || 'UNKNOWN_ERROR',
+          message: data.message || data.error || 'Failed to authenticate with OpenAI'
+        });
+        return;
+      }
+      
+      const EPHEMERAL_KEY = data.client_secret.value;
 
-    // Create a peer connection
-    const pc = new RTCPeerConnection();
+      // Create a peer connection
+      const pc = new RTCPeerConnection();
 
-    // Set up to play remote audio from the model
-    audioElement.current = document.createElement("audio");
-    audioElement.current.autoplay = true;
-    pc.ontrack = (e) => (audioElement.current.srcObject = e.streams[0]);
+      // Set up to play remote audio from the model
+      audioElement.current = document.createElement("audio");
+      audioElement.current.autoplay = true;
+      pc.ontrack = (e) => (audioElement.current.srcObject = e.streams[0]);
 
-    // Add local audio track for microphone input in the browser
-    const ms = await navigator.mediaDevices.getUserMedia({
-      audio: true,
-    });
-    pc.addTrack(ms.getTracks()[0]);
+      // Add local audio track for microphone input in the browser
+      const ms = await navigator.mediaDevices.getUserMedia({
+        audio: true,
+      });
+      pc.addTrack(ms.getTracks()[0]);
 
-    // Set up data channel for sending and receiving events
-    const dc = pc.createDataChannel("oai-events");
-    setDataChannel(dc);
+      // Set up data channel for sending and receiving events
+      const dc = pc.createDataChannel("oai-events");
+      setDataChannel(dc);
 
-    // Start the session using the Session Description Protocol (SDP)
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
+      // Start the session using the Session Description Protocol (SDP)
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
 
-    const baseUrl = "https://api.openai.com/v1/realtime";
-    const model = "gpt-4o-realtime-preview-2024-12-17";
-    //const model = "gpt-realtime-mini-2025-10-06";
-    const sdpResponse = await fetch(`${baseUrl}?model=${model}`, {
-      method: "POST",
-      body: offer.sdp,
-      headers: {
-        Authorization: `Bearer ${EPHEMERAL_KEY}`,
-        "Content-Type": "application/sdp",
-      },
-    });
+      const baseUrl = "https://api.openai.com/v1/realtime";
+      const model = "gpt-4o-realtime-preview-2024-12-17";
+      //const model = "gpt-realtime-mini-2025-10-06";
+      const sdpResponse = await fetch(`${baseUrl}?model=${model}`, {
+        method: "POST",
+        body: offer.sdp,
+        headers: {
+          Authorization: `Bearer ${EPHEMERAL_KEY}`,
+          "Content-Type": "application/sdp",
+        },
+      });
 
-    const answer = {
-      type: "answer",
-      sdp: await sdpResponse.text(),
-    };
-    await pc.setRemoteDescription(answer);
+      const answer = {
+        type: "answer",
+        sdp: await sdpResponse.text(),
+      };
+      await pc.setRemoteDescription(answer);
 
-    peerConnection.current = pc;
+      peerConnection.current = pc;
+    } catch (error) {
+      console.error("Session start error:", error);
+      setApiKeyError({
+        type: 'SESSION_ERROR',
+        message: error.message || 'Failed to start interview session'
+      });
+    }
   }
 
   // Stop current session, clean up peer connection and data channel
@@ -197,6 +224,14 @@ export default function App() {
 
         // Send initial topic instruction to model
         if (topic) {
+          let briefingText = `You are an interviewer on the subject of ${topic}, the role is: ${role}.`;
+          
+          if (jobSpec && jobSpec.trim()) {
+            briefingText += `\n\nHere is the specific job specification you should focus on during this interview:\n\n${jobSpec.trim()}\n\nPlease tailor your questions to assess the candidate's fit for this specific role and requirements.`;
+          }
+          
+          briefingText += ` Please start the conversation and ask me questions to test my knowledge.`;
+
           const event = {
             type: "conversation.item.create",
             item: {
@@ -205,7 +240,7 @@ export default function App() {
               content: [
                 {
                   type: "input_text",
-                  text: `You are an interviewer on the subject of ${topic}, the role is: ${role}. Please start the conversation and ask me questions to test my knowledge.`,
+                  text: briefingText,
                 },
               ],
             },
@@ -218,7 +253,7 @@ export default function App() {
         }
       });
     }
-  }, [dataChannel, topic]);
+  }, [dataChannel, topic, role, jobSpec]);
 
   return (
     <>
@@ -230,7 +265,6 @@ export default function App() {
       </nav>
 
       <main className="fixed top-16 left-0 right-0 bottom-0 bg-gray-50 flex flex-col">
-        {/* Mobile-first responsive controls */}
         <div className="flex-shrink-0 bg-white border-b border-gray-200 p-3 sm:p-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:gap-6">
             <div className="flex-1 min-w-0">
@@ -260,6 +294,7 @@ export default function App() {
                 <option value="python">Python</option>
                 <option value="devops">DevOps</option>
                 <option value="system-design">System Design</option>
+                <option value="system-design">LEET Code</option>
                 <option value="cto-role">CTO Role</option>
                 <option value="qa-role">QA Role</option>
                 <option value="asset-management">Asset Management</option>                
@@ -267,7 +302,7 @@ export default function App() {
                 <option value="mechatronics">Mechatronics</option>
                 <option value="brics-trade-group">BRICS Trade Group</option>
                 <option value="g7-trade-group">G7 Trade Group</option>
-                <option value="human-resources">Human Resources</option>
+                <option value="human-resources">Human Resources</option>                
               </select>
             </div>
 
@@ -299,10 +334,41 @@ export default function App() {
               </select>
             </div>
           </div>
+          
+          {/* Job Specification and API Key Components */}
+          <div className="mt-4 space-y-4 sm:space-y-0 sm:grid sm:grid-cols-2 sm:gap-4">
+            <JobSpecification 
+              jobSpec={jobSpec} 
+              setJobSpec={setJobSpec} 
+              isSessionActive={isSessionActive}
+            />
+            <APIKeyInput 
+              apiKey={apiKey} 
+              setApiKey={(newKey) => {
+                setApiKey(newKey);
+                // Clear any API key errors when a new key is set
+                if (apiKeyError) {
+                  setApiKeyError(null);
+                }
+              }}
+              isSessionActive={isSessionActive}
+            />
+          </div>
         </div>
 
         <section className="flex-1 flex flex-col min-h-0">
           <div className="flex-1 overflow-y-auto px-3 py-3 sm:px-4 sm:py-4 scrollable">
+            {/* API Key Error Alert */}
+            {apiKeyError && (
+              <APIErrorAlert 
+                error={apiKeyError}
+                onClose={() => setApiKeyError(null)}
+                onRetry={() => {
+                  setApiKeyError(null);
+                  startSession();
+                }}
+              />
+            )}
             <EventLog events={events} />
           </div>
           <div className="flex-shrink-0 border-t border-gray-200 p-3 sm:p-4 bg-white">

@@ -52,6 +52,14 @@ export default function EventLog({ events }) {
       }
     }
 
+    // Only show events that have a transcript or an error
+    const hasTranscript = event?.transcript && event.transcript.trim() !== "";
+    const hasError = event?.error || event?.type?.includes("error");
+    
+    if (!hasTranscript && !hasError) {
+      return; // Skip this event
+    }
+
     // If event has a transcript, show it instead of JSON
     console.log(event);
     const content = event?.transcript ? (
@@ -60,7 +68,7 @@ export default function EventLog({ events }) {
       </div>
     ) : (
       <div
-        className={`text-gray-600 bg-gray-50 p-3 rounded-md overflow-x-auto hidden`}
+        className={`text-gray-600 bg-gray-50 p-3 rounded-md overflow-x-auto ${hasError ? 'block' : 'hidden'}`}
       >
         <pre className="text-xs whitespace-pre-wrap break-words">{JSON.stringify(event, null, 2)}</pre>
       </div>
@@ -68,8 +76,8 @@ export default function EventLog({ events }) {
 
     eventsToDisplay.push(
       <div key={event.event_id}>
-        <Event event={event} timestamp={event.timestamp} />
-        {event.transcript && content}
+        {/* <Event event={event} timestamp={event.timestamp} /> */}
+        {(event.transcript || hasError) && content}
       </div>
     );
   });
