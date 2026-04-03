@@ -31,6 +31,7 @@ export default function APIErrorAlert({ error, onClose, onRetry }) {
   const getActionButton = (type) => {
     switch (type) {
       case 'INVALID_KEY':
+      case 'INVALID_FORMAT':
       case 'ACCESS_DENIED':
       case 'QUOTA_EXCEEDED':
         return (
@@ -78,6 +79,11 @@ export default function APIErrorAlert({ error, onClose, onRetry }) {
           <p className="text-sm text-gray-700 mb-3">
             {error.message}
           </p>
+          {error.debugKeyPrefix && (
+            <p className="text-xs font-mono bg-gray-100 rounded px-2 py-1 mb-3 text-gray-600">
+              DEBUG key used: {error.debugKeyPrefix}
+            </p>
+          )}
           <div className="flex items-center justify-between">
             {getActionButton(error.type)}
             <button

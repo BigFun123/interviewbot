@@ -65,7 +65,7 @@ function SessionActive({ stopSession, sendTextMessage, topic, role }) {
         icon={<CloudOff height={16} />}
         className="bg-gray-500 hover:bg-gray-600 px-4 py-3 min-h-[44px]"
       >
-        Disconnect
+        Stop Interview
       </Button>
     </div>
   );

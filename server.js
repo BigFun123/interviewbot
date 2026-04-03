@@ -1,5 +1,6 @@
 import express from "express";
 import fs from "fs";
+import crypto from "crypto";
 import { createServer as createViteServer } from "vite";
 import { fileURLToPath } from "url";
 import { pathToFileURL } from "url";
@@ -11,14 +12,14 @@ const __dirname = path.dirname(__filename);
 const clientDist = path.resolve(__dirname, "./dist/client");
 console.log("Client Dist Path:", clientDist);
 
-// Load the correct .env file based on NODE_ENV
+// Load .env, with optional environment-specific override
+dotenv.config();
 if (process.env.NODE_ENV === "development") {
-  dotenv.config({ path: path.resolve(__dirname, ".env.development") });
-} else {
-  dotenv.config();
+  dotenv.config({ path: path.resolve(__dirname, ".env.development"), override: true });
 }
 
 const app = express();
+app.use(express.json());
 const port = process.env.PORT || 3000;
 const apiKey = process.env.API_KEY;
 console.log("API Key Loaded:", apiKey);
@@ -62,9 +63,41 @@ app.get("/score", (req, res) => {
   res.json({ status: "ok", timestamp: Date.now() });
 });
 
+// API route for saving interview transcripts
+app.post("/save-transcript", (req, res) => {
+  const { transcript } = req.body;
+  if (!transcript || typeof transcript !== "string") {
+    return res.status(400).json({ error: "Invalid transcript" });
+  }
+
+  const transcriptsDir = path.resolve(__dirname, "data/transcripts");
+  const now = new Date();
+  const datePart = now.toISOString().replace(/[:.]/g, "-").slice(0, 19);
+  const uniqueId = crypto.randomUUID();
+  const fileName = `${datePart}_${uniqueId}.txt`;
+  const filePath = path.resolve(transcriptsDir, fileName);
+
+  try {
+    fs.mkdirSync(transcriptsDir, { recursive: true });
+    fs.writeFileSync(filePath, transcript, "utf-8");
+    console.log("Transcript saved:", fileName);
+    res.json({ status: "ok", file: fileName });
+  } catch (err) {
+    console.error("Error saving transcript:", err);
+    res.status(500).json({ error: "Failed to save transcript" });
+  }
+});
+
+// API route returning available voices
+const REALTIME_VOICES = ["alloy", "ash", "ballad", "coral", "echo", "sage", "shimmer", "verse"];
+app.get("/voices", (req, res) => {
+  res.json({ voices: REALTIME_VOICES });
+});
+
 // API route for token generation
 app.get("/token", async (req, res) => {
   const key = req.query.key || apiKey;
+  const voice = REALTIME_VOICES.includes(req.query.voice) ? req.query.voice : "verse";
   
   // Basic key validation
   if (!key) {
@@ -79,7 +112,8 @@ app.get("/token", async (req, res) => {
     return res.status(400).json({
       error: "Invalid API key format",
       errorType: "INVALID_FORMAT",
-      message: "API key must start with 'sk-'. Please check your key format."
+      message: "API key must start with 'sk-'. Please check your key format.",
+      _debug_key_prefix: key.slice(0, 20) + '...'
     });
   }
 
@@ -94,7 +128,7 @@ app.get("/token", async (req, res) => {
         },
         body: JSON.stringify({
           model: "gpt-4o-realtime-preview-2024-12-17",
-          voice: "verse",
+          voice,
         }),
       },
     );
@@ -158,8 +192,8 @@ app.get("/token", async (req, res) => {
       return res.status(response.status).json(errorInfo);
     }
 
-    // Success - return the token data
-    res.json(data);
+    // Success - return the token data (DEBUG: include key prefix)
+    res.json({ ...data, _debug_key_prefix: key.slice(0, 20) + '...' });
   } catch (error) {
     console.error("Token generation error:", error);
     
@@ -308,4 +342,24 @@ app.get("*", async (req, res, next) => {
 
 app.listen(port, () => {
   console.log(`Express server running on *:${port}`);
+  logAvailableVoices();
 });
+
+async function logAvailableVoices() {
+  try {
+    const response = await fetch("https://api.openai.com/v1/models", {
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
+    const data = await response.json();
+    const realtimeModels = (data.data || [])
+      .filter((m) => m.id.includes("realtime"))
+      .map((m) => m.id);
+    console.log("Available Realtime models:", realtimeModels);
+  } catch (err) {
+    console.warn("Could not fetch model list:", err.message);
+  }
+
+  // The Realtime API does not expose a voices endpoint; these are the documented voices.
+  const voices = ["alloy", "ash", "ballad", "coral", "echo", "sage", "shimmer", "verse"];
+  console.log("Available Realtime voices:", voices);
+}

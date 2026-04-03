@@ -5,23 +5,45 @@ const SESSION_DURATION_MS = 5 * 60 * 1000; // 5 minutes
 import logo from "/assets/logo.svg";
 import EventLog from "./EventLog";
 import SessionControls from "./SessionControls";
-import ToolPanel from "./ToolPanel";
-import EgyptPanel from "./EgyptPanel";
 import JobSpecification from "./JobSpecification";
 import APIKeyInput from "./APIKeyInput";
 import APIErrorAlert from "./APIErrorAlert";
+import Interviewer from "./Interviewer";
+import EpistemicLogo from "./EpistemicLogo";
 
 export default function App() {
   const [isSessionActive, setIsSessionActive] = useState(false);
   const [events, setEvents] = useState([]);
+
+  // Keep a ref in sync so event handlers always have fresh data
+  useEffect(() => { eventsRef.current = events; }, [events]);
   const [dataChannel, setDataChannel] = useState(null);
   const peerConnection = useRef(null);
   const audioElement = useRef(null);
-  const [topic, setTopic] = useState(".NET Core");
-  const [role, setRole] = useState("Senior");
-  const [jobSpec, setJobSpec] = useState("");
-  const [apiKey, setApiKey] = useState("");
+  const eventsRef = useRef([]);
+  const transcriptSavedRef = useRef(false);
+  // Seed initial values from URL query params (e.g. ?name=Bob&topic=react&role=senior&key=sk-…&jobspec=…)
+  // topic and role params are normalised (lowercase, spaces→hyphens) so both "QA Role" and "qa-role" work.
+  const params = new URLSearchParams(window.location.search);
+  const normalizeSlug = (val) => val.toLowerCase().replace(/\s+/g, "-");
+  const topicFromParam = !!params.get("topic");
+  const roleFromParam = !!params.get("role");
+  const [topic, setTopic] = useState(params.get("topic") ? normalizeSlug(params.get("topic")) : "dotnet-core");
+  const [role, setRole] = useState(params.get("role") ? normalizeSlug(params.get("role")) : "senior");
+  const [jobSpec, setJobSpec] = useState(params.get("jobspec") || "");
+  const [candidateName, setCandidateName] = useState(() => { const n = params.get("name") || ""; return n ? n.charAt(0).toUpperCase() + n.slice(1) : ""; });
+  const [apiKey, setApiKey] = useState(params.get("key") || "");
   const [apiKeyError, setApiKeyError] = useState(null);
+  const [voice, setVoice] = useState(params.get("voice") || "verse");
+  const [voices, setVoices] = useState(["verse"]);
+
+  // Fetch available voices from server
+  useEffect(() => {
+    fetch("/voices")
+      .then((r) => r.json())
+      .then((d) => { if (d.voices) setVoices(d.voices); })
+      .catch(() => {});
+  }, []);
 
   // Add a timer state
   const [timer, setTimer] = useState(SESSION_DURATION_MS);
@@ -64,20 +86,33 @@ export default function App() {
       setApiKeyError(null);
       
       // Get a session token for OpenAI Realtime API
-      const tokenUrl = apiKey ? `/token?key=${encodeURIComponent(apiKey)}` : "/token";
+      const tokenUrl = apiKey
+        ? `/token?key=${encodeURIComponent(apiKey)}&voice=${encodeURIComponent(voice)}`
+        : `/token?voice=${encodeURIComponent(voice)}`;
       const tokenResponse = await fetch(tokenUrl);
       const data = await tokenResponse.json();
       
       // Check for API key errors
       if (!tokenResponse.ok) {
+        if (data.errorType === 'INVALID_FORMAT') {
+          // Clear the malformed key so the user is prompted to re-enter
+          setApiKey("");
+          localStorage.removeItem('openai-api-key');
+        }
         setApiKeyError({
           type: data.errorType || 'UNKNOWN_ERROR',
-          message: data.message || data.error || 'Failed to authenticate with OpenAI'
+          message: data.message || data.error || 'Failed to authenticate with OpenAI',
+          debugKeyPrefix: data._debug_key_prefix
         });
         return;
       }
       
+      // DEBUG: display key being used
+      console.log('[DEBUG] Key used by server:', data._debug_key_prefix);
       const EPHEMERAL_KEY = data.client_secret.value;
+
+      // Reset transcript guard for the new session
+      transcriptSavedRef.current = false;
 
       // Create a peer connection
       const pc = new RTCPeerConnection();
@@ -86,6 +121,15 @@ export default function App() {
       audioElement.current = document.createElement("audio");
       audioElement.current.autoplay = true;
       pc.ontrack = (e) => (audioElement.current.srcObject = e.streams[0]);
+
+      // Save transcript if the connection drops unexpectedly
+      pc.onconnectionstatechange = () => {
+        const state = pc.connectionState;
+        console.log("Connection state:", state);
+        if (state === "disconnected" || state === "failed" || state === "closed") {
+          saveTranscript();
+        }
+      };
 
       // Add local audio track for microphone input in the browser
       const ms = await navigator.mediaDevices.getUserMedia({
@@ -130,8 +174,12 @@ export default function App() {
   }
 
   // Stop current session, clean up peer connection and data channel
-  function stopSession() {
+  async function stopSession() {
     console.log("stopsession", peerConnection.current);
+
+    // Save transcript before tearing down
+    await saveTranscript();
+
     if (dataChannel) {
       dataChannel.close();
     }
@@ -149,6 +197,40 @@ export default function App() {
     setIsSessionActive(false);
     setDataChannel(null);
     peerConnection.current = null;
+  }
+
+  // Build a plain-text transcript from events and POST to server
+  async function saveTranscript() {
+    if (transcriptSavedRef.current) return;
+    transcriptSavedRef.current = true;
+    const lines = [];
+    // eventsRef is always current even in stale closures
+    // events are stored newest-first; reverse for chronological order
+    const chronological = [...eventsRef.current].reverse();
+    for (const event of chronological) {
+      if (!event.transcript || event.transcript.trim() === "") continue;
+      // Server events from OpenAI have IDs starting with "event_".
+      // User audio transcription comes back as a server event but the type identifies it.
+      const isUserSpeech = event.type === "conversation.item.input_audio_transcription.completed";
+      const isAiSpeech = event.type === "response.audio_transcript.done";
+      const isClientText = event.event_id && !event.event_id.startsWith("event_");
+      if (!isUserSpeech && !isAiSpeech && !isClientText) continue;
+      const speaker = (isUserSpeech || isClientText) ? candidateName.trim() || "You" : "AI";
+      const time = event.timestamp || "";
+      lines.push(`[${time}] ${speaker}: ${event.transcript.trim()}`);
+    }
+    if (lines.length === 0) return;
+    const nameHeader = candidateName.trim() ? `Candidate: ${candidateName.trim()}\n` : "";
+    const transcript = `Interview Transcript\n${nameHeader}Topic: ${topic} | Level: ${role} | Voice: ${voice}\n\n` + lines.join("\n\n");
+    try {
+      await fetch("/save-transcript", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ transcript }),
+      });
+    } catch (err) {
+      console.error("Failed to save transcript:", err);
+    }
   }
 
   // Send a message to the model
@@ -222,6 +304,14 @@ export default function App() {
         setIsSessionActive(true);
         setEvents([]);
 
+        // Enable transcription of the user's microphone audio
+        dataChannel.send(JSON.stringify({
+          type: "session.update",
+          session: {
+            input_audio_transcription: { model: "whisper-1" },
+          },
+        }));
+
         // Send initial topic instruction to model
         if (topic) {
           let briefingText = `You are an interviewer on the subject of ${topic}, the role is: ${role}.`;
@@ -260,13 +350,31 @@ export default function App() {
       <nav className="fixed top-0 left-0 right-0 h-16 flex items-center bg-white z-50 shadow-sm">
         <div className="flex items-center gap-2 w-full mx-2 px-2 pb-2 border-0 border-b border-solid border-gray-200">
           <img style={{ width: "24px" }} src={logo} alt="Logo" />
-          <h1 className="text-sm sm:text-base font-semibold">AI Interviewer DEMO by Karl Lilje</h1>          
+          <h1 className="text-sm sm:text-base font-semibold">Interviewer Trainer</h1>
+          <div className="ml-auto">
+            <EpistemicLogo />
+          </div>
         </div>
       </nav>
 
       <main className="fixed top-16 left-0 right-0 bottom-0 bg-gray-50 flex flex-col">
         <div className="flex-shrink-0 bg-white border-b border-gray-200 p-3 sm:p-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:gap-6">
+            <div className="flex-1 min-w-0">
+              <label htmlFor="candidate-name" className="block text-xs font-semibold text-gray-700 mb-1">
+                Candidate Name
+              </label>
+              <input
+                id="candidate-name"
+                type="text"
+                placeholder="Enter your name"
+                className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                value={candidateName}
+                onChange={(e) => { const v = e.target.value; setCandidateName(v ? v.charAt(0).toUpperCase() + v.slice(1) : v); }}
+                disabled={isSessionActive}
+              />
+            </div>
+            {!topicFromParam && (
             <div className="flex-1 min-w-0">
               <label htmlFor="topic-select" className="block text-xs font-semibold text-gray-700 mb-1">
                 Interview Topic
@@ -285,7 +393,7 @@ export default function App() {
                 <option value="" disabled>
                   Select a topic
                 </option>
-                <option value="dotnet-sore">.NET Core</option>
+                <option value="dotnet-core">.NET Core</option>
                 <option value="dotnet">.NET</option>
                 <option value="react">React</option>
                 <option value="sql">SQL</option>
@@ -305,7 +413,9 @@ export default function App() {
                 <option value="human-resources">Human Resources</option>                
               </select>
             </div>
+            )}
 
+            {!roleFromParam && (
             <div className="flex-1 min-w-0">
               <label htmlFor="role-select" className="block text-xs font-semibold text-gray-700 mb-1">
                 Experience Level
@@ -333,16 +443,33 @@ export default function App() {
                 <option value="director">Director</option>
               </select>
             </div>
+            )}
+            <div className="flex-1 min-w-0">
+              <label htmlFor="voice-select" className="block text-xs font-semibold text-gray-700 mb-1">
+                Interviewer
+              </label>
+              <select
+                id="voice-select"
+                className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent capitalize"
+                value={voice}
+                onChange={(e) => setVoice(e.target.value)}
+                disabled={isSessionActive}
+              >
+                {voices.map((v) => (
+                  <option key={v} value={v} className="capitalize">{v.charAt(0).toUpperCase() + v.slice(1)}</option>
+                ))}
+              </select>
+            </div>
           </div>
           
           {/* Job Specification and API Key Components */}
           <div className="mt-4 space-y-4 sm:space-y-0 sm:grid sm:grid-cols-2 sm:gap-4">
-            <JobSpecification 
+            {/* <JobSpecification 
               jobSpec={jobSpec} 
               setJobSpec={setJobSpec} 
               isSessionActive={isSessionActive}
-            />
-            <APIKeyInput 
+            /> */}
+            {/* <APIKeyInput 
               apiKey={apiKey} 
               setApiKey={(newKey) => {
                 setApiKey(newKey);
@@ -352,7 +479,7 @@ export default function App() {
                 }
               }}
               isSessionActive={isSessionActive}
-            />
+            /> */}
           </div>
         </div>
 
@@ -369,6 +496,10 @@ export default function App() {
                 }}
               />
             )}
+
+            <Interviewer width="320px"/>
+
+
             <EventLog events={events} />
           </div>
           <div className="flex-shrink-0 border-t border-gray-200 p-3 sm:p-4 bg-white">

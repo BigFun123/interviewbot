@@ -1,0 +1,2 @@
+
+we want to save the transcription into a date-time-uniqueid.txt file

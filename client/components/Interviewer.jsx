@@ -31,11 +31,11 @@ export default function Interviewer({ className = "" }) {
   }
 
   return (
-    <div className={`interviewer-container ${className}`}>
+    <div className={`interviewer-container ${className} flex items-center justify-center`}>
       <img
         src={selectedImage}
-        alt="AI Interviewer"
-        className="w-full h-full object-cover rounded-lg shadow-md"
+        alt="AI Interviewer"  
+        className="w-1/4 h-1/4 object-cover rounded-lg shadow-md"
       />
     </div>
   );

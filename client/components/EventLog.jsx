@@ -86,11 +86,12 @@ export default function EventLog({ events }) {
     <div className="flex flex-col gap-3 sm:gap-4">
       {events.length === 0 ? (
         <div className="text-center text-gray-500 py-8 sm:py-12">
-          <div className="text-lg sm:text-xl mb-2">Ready to start your interview</div>
+          <div className="text-lg sm:text-xl mb-2">Ready to start your interview</div>          
           <div className="text-sm">Select a topic and difficulty level above, then click start to begin</div>
           <div className="text-sm">I will ask you questions, but if you don't know the answer, I will explain!</div>
+          <div className="text-sm">Speak normally!</div>
           <div className="text-sm">Say "Next Question" to move on.</div>
-          <div className="text-sm">DEMO Only. Session expires in 5 minutes.</div>
+          <div className="text-sm">+-5 minutes.</div>
         </div>
       ) : (
         eventsToDisplay
